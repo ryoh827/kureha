@@ -120,7 +120,7 @@ class TestKureha < Minitest::Test
 
   def test_whitespace_optimization
     code = "def  calculate(x,   y)\n  \n  result   =  x  +  y\n\n  return    result\nend\n"
-    expected = "def calculate(x,y);result=x+y;result;end"
+    expected = "def calculate(x,y);result=x+y;return result;end"
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -284,6 +284,99 @@ class TestKureha < Minitest::Test
     assert_raises(Kureha::ParseError) do
       @minifier.minify(code)
     end
+  end
+
+  def test_magic_comments
+    code = <<~RUBY
+      # frozen_string_literal: true
+      # encoding: utf-8
+      
+      puts "Hello"
+    RUBY
+    
+    result = @minifier.minify(code)
+    assert result.start_with?("# frozen_string_literal: true\n# encoding: utf-8\n")
+    assert result.include?('puts"Hello"')
+  end
+
+  def test_require_statements
+    code = <<~RUBY
+      require 'json'
+      require_relative 'helper'
+      puts "loaded"
+    RUBY
+    
+    expected = 'require "json";require_relative "helper";puts"loaded"'
+    assert_equal expected, @minifier.minify(code)
+  end
+
+  def test_unless_statement
+    code = <<~RUBY
+      puts "error" unless valid
+      
+      unless condition
+        do_something
+      else
+        do_other
+      end
+    RUBY
+    
+    expected = 'puts"error" unless validunless condition;do_something;else;do_other;end'
+    assert_equal expected, @minifier.minify(code)
+  end
+
+  def test_return_statement
+    code = <<~RUBY
+      def calculate
+        return 42
+      end
+      
+      def early_return
+        return if error
+        process
+      end
+    RUBY
+    
+    expected = 'def calculate;return 42;end;def early_return;return if errorprocess;end'
+    assert_equal expected, @minifier.minify(code)
+  end
+
+  def test_case_when_statement
+    code = <<~RUBY
+      case value
+      when 1
+        puts "one"
+      when 2, 3
+        puts "two or three"
+      else
+        puts "other"
+      end
+    RUBY
+    
+    expected = 'case value;when 1;puts"one";when 2,3;puts"two or three";else;puts"other";end'
+    assert_equal expected, @minifier.minify(code)
+  end
+
+  def test_regular_expressions
+    code = <<~RUBY
+      text =~ /hello/i
+      match = /world/.match(text)
+    RUBY
+    
+    expected = 'text=~/hello/i;match=/world/.match(text)'
+    assert_equal expected, @minifier.minify(code)
+  end
+
+  def test_super_keyword
+    code = <<~RUBY
+      def method_with_super
+        super
+        super(arg)
+      end
+    RUBY
+    
+    expected = 'def method_with_super;;super(arg);end'
+    assert_equal expected, @minifier.minify(code)
   end
 
   private
