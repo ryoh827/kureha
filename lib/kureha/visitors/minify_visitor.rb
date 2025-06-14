@@ -156,17 +156,23 @@ module Kureha
         end
 
         if node.arguments && !node.arguments.arguments.empty? && !OPERATORS.include?(node.name.to_s)
-          needs_parens = !%w[puts print p].include?(node.name.to_s)
+          needs_parens = !%w[puts print p require require_relative].include?(node.name.to_s)
           if needs_parens
             @result << "("
             visit(node.arguments)
             @result << ")"
           else
-            first_arg = node.arguments.arguments.first
-            if !first_arg.class.name.end_with?("StringNode") && !first_arg.class.name.end_with?("InterpolatedStringNode")
+            # Special handling for require/require_relative
+            if %w[require require_relative].include?(node.name.to_s)
               @result << " "
+              visit(node.arguments)
+            else
+              first_arg = node.arguments.arguments.first
+              if !first_arg.class.name.end_with?("StringNode") && !first_arg.class.name.end_with?("InterpolatedStringNode")
+                @result << " "
+              end
+              visit(node.arguments)
             end
-            visit(node.arguments)
           end
         end
 
@@ -277,7 +283,7 @@ module Kureha
       end
 
       def visit_if_node(node)
-        if !node.consequent && node.statements && node.statements.body.length == 1
+        if !node.subsequent && node.statements && node.statements.body.length == 1
           visit(node.statements)
           @result << " if "
           visit(node.predicate)
@@ -286,9 +292,27 @@ module Kureha
           visit(node.predicate)
           @result << ";"
           visit(node.statements) if node.statements
-          if node.consequent
+          if node.subsequent
             @result << ";else;"
-            visit(node.consequent)
+            visit(node.subsequent)
+          end
+          @result << ";end"
+        end
+      end
+
+      def visit_unless_node(node)
+        if !node.else_clause && node.statements && node.statements.body.length == 1
+          visit(node.statements)
+          @result << " unless "
+          visit(node.predicate)
+        else
+          @result << "unless "
+          visit(node.predicate)
+          @result << ";"
+          visit(node.statements) if node.statements
+          if node.else_clause
+            @result << ";else;"
+            visit(node.else_clause)
           end
           @result << ";end"
         end
@@ -429,6 +453,61 @@ module Kureha
         end
       end
 
+      def visit_return_node(node)
+        @result << "return"
+        if node.arguments
+          @result << " "
+          visit(node.arguments)
+        end
+      end
+
+      def visit_case_node(node)
+        @result << "case "
+        visit(node.predicate) if node.predicate
+        @result << ";"
+        node.conditions.each do |condition|
+          visit(condition)
+        end
+        if node.else_clause
+          @result << "else;"
+          visit(node.else_clause)
+          @result << ";"
+        end
+        @result << "end"
+      end
+
+      def visit_when_node(node)
+        @result << "when "
+        node.conditions.each_with_index do |cond, i|
+          visit(cond)
+          @result << "," unless i == node.conditions.length - 1
+        end
+        @result << ";"
+        visit(node.statements) if node.statements
+        @result << ";"
+      end
+
+      def visit_regular_expression_node(node)
+        # Use original source to preserve flags correctly
+        source = node.location.slice
+        @result << source
+      end
+
+      def visit_match_last_line_node(node)
+        @result << "=~"
+        visit(node.call)
+      end
+
+      def visit_super_node(node)
+        @result << "super"
+        if node.arguments && !node.arguments.arguments.empty?
+          @result << "("
+          visit(node.arguments)
+          @result << ")"
+        end
+        visit(node.block) if node.block
+      end
+
       private
 
       def needs_parens?(node, parent = nil)
@@ -472,6 +551,7 @@ module Kureha
 
       def is_control_structure?(node)
         node.class.name.end_with?("IfNode") ||
+        node.class.name.end_with?("UnlessNode") ||
         node.class.name.end_with?("WhileNode") ||
         node.class.name.end_with?("UntilNode") ||
         node.class.name.end_with?("CaseNode") ||
@@ -479,6 +559,24 @@ module Kureha
         node.class.name.end_with?("BeginNode") ||
         node.class.name.end_with?("RescueNode") ||
         node.class.name.end_with?("EnsureNode")
+      end
+
+      def is_modifier_form?(node)
+        # if modifier form has only one statement and no else clause
+        if node.class.name.end_with?("IfNode")
+          return node.statements&.body&.length == 1 && !node.subsequent
+        elsif node.class.name.end_with?("UnlessNode")
+          return node.statements&.body&.length == 1 && !node.else_clause
+        end
+        false
+      end
+
+      def with_parent(parent)
+        old_parent = @current_parent
+        @current_parent = parent
+        yield
+      ensure
+        @current_parent = old_parent
       end
     end
   end
