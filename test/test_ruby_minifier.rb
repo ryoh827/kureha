@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require 'kureha'
+require "kureha"
 
 class TestKureha < Minitest::Test
   def setup
@@ -89,7 +89,7 @@ class TestKureha < Minitest::Test
     expected = "module Example;def initialize(name);@name=name;end;end"
     assert_equal expected, @minifier.minify(code)
   end
-  
+
   def test_constant_definition
     code = <<~RUBY
       CONST = "example"
@@ -220,7 +220,7 @@ class TestKureha < Minitest::Test
       end
     RUBY
 
-    expected = 'array.each do|item|;process(item) if item.valid?;end;hash.each do|key,value|;puts"#{key}: #{value}";end;(1..10).each do|i|;puts i if i.even?;end'
+    expected = "array.each do|item|;process(item) if item.valid?;end;hash.each do|key,value|;puts\"\#{key}: \#{value}\";end;(1..10).each do|i|;puts i if i.even?;end"
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -232,7 +232,7 @@ class TestKureha < Minitest::Test
       result = value || default
     RUBY
 
-    expected = 'x=1+2*3;y=(a+b)*(c-d);z=x==y&&a!=b;result=value||default'
+    expected = "x=1+2*3;y=(a+b)*(c-d);z=x==y&&a!=b;result=value||default"
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -293,7 +293,7 @@ class TestKureha < Minitest::Test
       
       puts "Hello"
     RUBY
-    
+
     result = @minifier.minify(code)
     assert result.start_with?("# frozen_string_literal: true\n# encoding: utf-8\n")
     assert result.include?('puts"Hello"')
@@ -305,7 +305,7 @@ class TestKureha < Minitest::Test
       require_relative 'helper'
       puts "loaded"
     RUBY
-    
+
     expected = 'require "json";require_relative "helper";puts"loaded"'
     assert_equal expected, @minifier.minify(code)
   end
@@ -320,8 +320,8 @@ class TestKureha < Minitest::Test
         do_other
       end
     RUBY
-    
-    expected = 'puts"error" unless validunless condition;do_something;else;do_other;end'
+
+    expected = 'puts"error" unless valid;unless condition;do_something;else;do_other;end'
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -336,8 +336,8 @@ class TestKureha < Minitest::Test
         process
       end
     RUBY
-    
-    expected = 'def calculate;return 42;end;def early_return;return if errorprocess;end'
+
+    expected = "def calculate;return 42;end;def early_return;return if error;process;end"
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -352,7 +352,7 @@ class TestKureha < Minitest::Test
         puts "other"
       end
     RUBY
-    
+
     expected = 'case value;when 1;puts"one";when 2,3;puts"two or three";else;puts"other";end'
     assert_equal expected, @minifier.minify(code)
   end
@@ -362,8 +362,8 @@ class TestKureha < Minitest::Test
       text =~ /hello/i
       match = /world/.match(text)
     RUBY
-    
-    expected = 'text=~/hello/i;match=/world/.match(text)'
+
+    expected = "text=~/hello/i;match=/world/.match(text)"
     assert_equal expected, @minifier.minify(code)
   end
 
@@ -374,8 +374,8 @@ class TestKureha < Minitest::Test
         super(arg)
       end
     RUBY
-    
-    expected = 'def method_with_super;;super(arg);end'
+
+    expected = "def method_with_super;super;super(arg);end"
     assert_equal expected, @minifier.minify(code)
   end
 
