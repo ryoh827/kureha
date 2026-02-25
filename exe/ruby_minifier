@@ -3,16 +3,14 @@
 
 require "kureha"
 require "optparse"
-
-options = {}
 opt_parser = OptionParser.new do |opts|
   opts.banner = "Usage: kureha [options] <ruby_file>"
-  
+
   opts.on("-h", "--help", "Show this help message") do
     puts opts
     exit
   end
-  
+
   opts.on("-v", "--version", "Show version") do
     puts Kureha::VERSION
     exit
@@ -41,7 +39,7 @@ end
 begin
   minified = Kureha::Minifier.new.minify(File.read(file_path))
   print minified  # puts の代わりに print を使用して余分な改行を避ける
-rescue StandardError => e
+rescue => e
   puts "Error: #{e.message}"
   exit 1
-end 
+end

@@ -12,4 +12,4 @@ module Kureha
       @remove_empty_lines = true
     end
   end
-end 
+end

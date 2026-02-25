@@ -1,4 +1,4 @@
-require 'prism'
+require "prism"
 
 module Kureha
   module Visitors
@@ -32,7 +32,7 @@ module Kureha
         last_index = node.body.length - 1
         node.body.each_with_index do |stmt, i|
           visit(stmt)
-          unless i == last_index || is_control_structure?(stmt) || @current_parent.class.name.end_with?("ParenthesesNode")
+          unless i == last_index || @current_parent.class.name.end_with?("ParenthesesNode")
             @result << ";"
           end
         end
@@ -62,13 +62,23 @@ module Kureha
       def visit_class_node(node)
         @result << "class "
         visit(node.constant_path)
+        if node.superclass
+          @result << "<"
+          visit(node.superclass)
+        end
         @result << ";"
         visit(node.body) if node.body
         @result << ";end"
       end
 
       def visit_constant_path_node(node)
-        visit(node.child)
+        if node.parent
+          visit(node.parent)
+          @result << "::"
+        elsif node.delimiter_loc
+          @result << "::"
+        end
+        @result << node.name
       end
 
       def visit_constant_read_node(node)
@@ -82,15 +92,7 @@ module Kureha
       end
 
       def visit_string_node(node)
-        if node.content.include?("\#{")
-          @result << "\""
-          @result << node.content.gsub('"', '\\"')
-          @result << "\""
-        else
-          @result << "\""
-          @result << node.content.gsub('"', '\\"')
-          @result << "\""
-        end
+        @result << node.unescaped.dump
       end
 
       def visit_integer_node(node)
@@ -161,18 +163,16 @@ module Kureha
             @result << "("
             visit(node.arguments)
             @result << ")"
-          else
+          elsif %w[require require_relative].include?(node.name.to_s)
             # Special handling for require/require_relative
-            if %w[require require_relative].include?(node.name.to_s)
+            @result << " "
+            visit(node.arguments)
+          else
+            first_arg = node.arguments.arguments.first
+            if !first_arg.class.name.end_with?("StringNode") && !first_arg.class.name.end_with?("InterpolatedStringNode")
               @result << " "
-              visit(node.arguments)
-            else
-              first_arg = node.arguments.arguments.first
-              if !first_arg.class.name.end_with?("StringNode") && !first_arg.class.name.end_with?("InterpolatedStringNode")
-                @result << " "
-              end
-              visit(node.arguments)
             end
+            visit(node.arguments)
           end
         end
 
@@ -189,17 +189,12 @@ module Kureha
       end
 
       def visit_parameters_node(node)
-        if node.requireds
-          node.requireds.each_with_index do |param, i|
-            visit(param)
-            @result << "," unless i == node.requireds.length - 1 || node.optionals.nil?
-          end
-        end
-        if node.optionals
-          node.optionals.each_with_index do |param, i|
-            visit(param)
-            @result << "," unless i == node.optionals.length - 1
-          end
+        params = []
+        params.concat(node.requireds) if node.requireds
+        params.concat(node.optionals) if node.optionals
+        params.each_with_index do |param, i|
+          visit(param)
+          @result << "," unless i == params.length - 1
         end
       end
 
@@ -236,7 +231,7 @@ module Kureha
           visit(node.parameters)
           @result << "|"
         end
-        if node.body && node.body.body && !node.body.body.empty?
+        if node.body&.body&.any?
           @result << ";"
         end
         visit(node.body) if node.body
@@ -345,11 +340,10 @@ module Kureha
       def visit_assoc_node(node)
         if node.key.class.name.end_with?("SymbolNode")
           @result << node.key.value
-          @result << ":"
         else
           visit(node.key)
-          @result << ":"
         end
+        @result << ":"
         visit(node.value)
       end
 
@@ -358,7 +352,7 @@ module Kureha
         node.parts.each do |part|
           case part
           when Prism::StringNode
-            @result << part.content.gsub('"', '\\"')
+            @result << part.unescaped.dump[1...-1]
           when Prism::EmbeddedStatementsNode
             @result << "\#{"
             visit(part.statements)
@@ -399,7 +393,7 @@ module Kureha
         node.parts.each do |part|
           case part
           when Prism::StringNode
-            @result << part.content.gsub('"', '\\"')
+            @result << part.unescaped.dump[1...-1]
           else
             @result << "\#{"
             visit(part)
@@ -461,6 +455,56 @@ module Kureha
         end
       end
 
+      def visit_break_node(node)
+        @result << "break"
+        if node.arguments
+          @result << " "
+          visit(node.arguments)
+        end
+      end
+
+      def visit_yield_node(node)
+        @result << "yield"
+        if node.arguments && !node.arguments.arguments.empty?
+          @result << "("
+          visit(node.arguments)
+          @result << ")"
+        end
+      end
+
+      def visit_begin_node(node)
+        @result << "begin"
+        if node.statements && !node.statements.body.empty?
+          @result << ";"
+          visit(node.statements)
+        end
+        if node.rescue_clause
+          @result << ";"
+          visit(node.rescue_clause)
+        end
+        if node.else_clause
+          @result << ";else;"
+          visit(node.else_clause)
+        end
+        if node.ensure_clause
+          @result << ";"
+          visit(node.ensure_clause)
+        end
+        @result << ";end"
+      end
+
+      def visit_else_node(node)
+        visit(node.statements) if node.statements
+      end
+
+      def visit_ensure_node(node)
+        @result << "ensure"
+        if node.statements && !node.statements.body.empty?
+          @result << ";"
+          visit(node.statements)
+        end
+      end
+
       def visit_case_node(node)
         @result << "case "
         visit(node.predicate) if node.predicate
@@ -508,15 +552,20 @@ module Kureha
         visit(node.block) if node.block
       end
 
+      def visit_forwarding_super_node(node)
+        @result << "super"
+        visit(node.block) if node.block
+      end
+
       private
 
       def needs_parens?(node, parent = nil)
         return false unless parent
 
-        if parent.class.name.end_with?("AndNode") || parent.class.name.end_with?("OrNode")
-          if node.class.name.end_with?("AndNode") || node.class.name.end_with?("OrNode")
+        if parent.class.name.end_with?("AndNode", "OrNode")
+          if node.class.name.end_with?("AndNode", "OrNode")
             return false if (parent.class.name.end_with?("AndNode") && node.class.name.end_with?("AndNode")) ||
-                          (parent.class.name.end_with?("OrNode") && node.class.name.end_with?("OrNode"))
+              (parent.class.name.end_with?("OrNode") && node.class.name.end_with?("OrNode"))
             parent_precedence = parent.class.name.end_with?("AndNode") ? 8 : 7
             node_precedence = node.class.name.end_with?("AndNode") ? 8 : 7
             return node_precedence <= parent_precedence
@@ -531,9 +580,9 @@ module Kureha
 
           if node.respond_to?(:operator)
             return false if node.operator == parent.operator && %w[+ * && ||].include?(parent.operator)
-            
+
             return true if NEEDS_PARENS.include?(node.operator)
-            
+
             node_precedence = OPERATOR_PRECEDENCE[node.operator] || 0
             parent_precedence = OPERATOR_PRECEDENCE[parent.operator] || 0
 
@@ -550,15 +599,7 @@ module Kureha
       end
 
       def is_control_structure?(node)
-        node.class.name.end_with?("IfNode") ||
-        node.class.name.end_with?("UnlessNode") ||
-        node.class.name.end_with?("WhileNode") ||
-        node.class.name.end_with?("UntilNode") ||
-        node.class.name.end_with?("CaseNode") ||
-        node.class.name.end_with?("ForNode") ||
-        node.class.name.end_with?("BeginNode") ||
-        node.class.name.end_with?("RescueNode") ||
-        node.class.name.end_with?("EnsureNode")
+        node.class.name.end_with?("IfNode", "UnlessNode", "WhileNode", "UntilNode", "CaseNode", "ForNode", "BeginNode", "RescueNode", "EnsureNode")
       end
 
       def is_modifier_form?(node)
