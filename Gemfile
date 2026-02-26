@@ -8,6 +8,6 @@ gemspec
 gem "irb"
 gem "rake", "~> 13.3"
 
-gem "minitest", "~> 5.25"
+gem "minitest", "~> 5.27"
 
-gem "standard", "~> 1.50"
+gem "standard", "~> 1.53"
